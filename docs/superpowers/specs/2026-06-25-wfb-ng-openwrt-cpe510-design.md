@@ -101,8 +101,10 @@ confirmed against `make info` on the first ImageBuilder run; see §7.)
   which is also the default `HOST_ADDR` that `wfb_rx` forwards decoded UDP to.
 - **SSH**: `dropbear` listens on the LAN; the operator runs `ssh root@192.168.1.1` to configure
   and start the node.
-- **Firewall**: left at OpenWrt default (`fw4`), which permits LAN + SSH. *(Optional further
-  trim: removing the firewall saves a few hundred KB; not done by default to avoid surprises.)*
+- **Firewall**: **removed** (`firewall4` + `nftables` + the `kmod-nft-*` modules). This is a
+  single-purpose appliance with one LAN port (SSH in, UDP forwarded to the directly-connected
+  host); the firewall adds no value and reclaims flash. Without it, the LAN is open on that port
+  — acceptable for this point-to-point use; re-add `firewall4` if you expose the device further.
 - **Wireless**: a shipped `/etc/config/wireless` disables the default radio so `netifd` does not
   create a managed `wlan0` on `phy0`; the launcher then creates a monitor vif directly. (The
   `phy0` device still exists for `iw` because `kmod-ath9k` is loaded.)
@@ -182,8 +184,9 @@ launcher's own vif teardown (no static `/etc/config/wireless` is shipped — see
 ### Package list passed to ImageBuilder
 
 ```
-PACKAGES="wfb-ng iw -wpad-basic-mbedtls -dnsmasq -odhcpd -ppp -ppp-mod-pppoe"
-FILES="files/"
+PACKAGES="wfb-ng iw -wpad-basic-mbedtls -dnsmasq -odhcpd -ppp -ppp-mod-pppoe \
+          -firewall4 -nftables -kmod-nft-core -kmod-nft-nat -kmod-nft-offload"
+FILES="build/overlay/"   # staged: committed files/ + keys/gs.key -> etc/gs.key
 ```
 
 `wfb-ng` pulls `libpcap`, `libsodium`, `libstdcpp` as dependencies; `kmod-ath9k`, `mac80211`,
@@ -279,8 +282,10 @@ The pairing tuple `LINK_ID` + radio ports + key must match the air unit.
   `REG` defaults to `US` and is configurable.)
 - **`swfec`/`zfex` on big-endian MIPS scalar path**: should compile and compute correctly; the
   qemu-user FEC test (§9) de-risks this and must pass.
-- **7.5 MB image budget**: expected to fit comfortably binaries-only, but only confirmed after
-  the first build; if tight, drop `firewall`/`fw4` and other defaults.
+- **Image budget**: confirmed — the CPE510 sysupgrade is a fixed-layout ~7.8 MB image that fits
+  the 7680k partition; the firewall stack is removed (rootfs ~9.6 MiB / 87 packages). Removing
+  packages frees rootfs/overlay space, not `.bin` size; trim further defaults if the rootfs ever
+  overflows the partition at build time.
 - **Default-key security**: the baked test key is shared and non-unique — acceptable for a PoC,
   documented as such, with regeneration instructions for a real link.
 - **OpenWrt SDK/ImageBuilder tarball URLs / package default names** for 25.12.x `ath79/generic`:

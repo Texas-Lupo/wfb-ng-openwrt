@@ -38,9 +38,13 @@ To build newer wfb-ng work: push to the fork, set `WFB_COMMIT` in `versions.env`
 `packages/` dir and `ADD_LOCAL_KEY=1` makes the image trust it. `wfb-ng` also
 exists in the official `packages` feed (the full upstream build); the SDK uses
 `feeds install -p wfbng` so this fork wins, and `libpcap` comes from the `base`
-feed. The image is ~7.8 MB (sysupgrade) against the CPE510's 7680k partition —
-it fits, but with little headroom; if you add packages and overflow, drop
-`firewall`/`fw4` from `IMG_PACKAGES` in `build.sh`.
+feed. The firewall stack (`firewall4` + `nftables` + `kmod-nft-*`) is removed —
+this is a one-port appliance, so it adds no value and frees ~1.6 MiB of rootfs
+(installed footprint ~9.6 MiB / 87 packages). The CPE510 sysupgrade image is a
+**fixed-layout** ~7.8 MB (tplink-safeloader), so removing packages frees
+read-only rootfs/overlay space rather than shrinking the `.bin`; if you add
+packages and the rootfs overflows the partition, trimming further defaults is
+the lever.
 
 ## Flash
 

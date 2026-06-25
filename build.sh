@@ -10,7 +10,7 @@ cd "$(dirname "$0")"
 
 SDK_IMAGE="wfbng-sdk:${OPENWRT_VERSION}"
 IB_IMAGE="wfbng-ib:${OPENWRT_VERSION}"
-IMG_PACKAGES="wfb-ng iw -wpad-basic-mbedtls -dnsmasq -odhcpd -ppp -ppp-mod-pppoe"
+IMG_PACKAGES="wfb-ng iw -wpad-basic-mbedtls -dnsmasq -odhcpd -ppp -ppp-mod-pppoe -firewall4 -nftables -kmod-nft-core -kmod-nft-nat -kmod-nft-offload"
 # --network host: the OpenWrt builds fetch sources; use the host's resolver/network.
 DOCKER_RUN=(docker run --rm --network host -u "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD:/work")
 
