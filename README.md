@@ -1,5 +1,9 @@
 # wfb-ng firmware for TP-Link CPE510
 
+[![build](https://github.com/gilankpam/wfb-ng-openwrt/actions/workflows/build.yml/badge.svg)](https://github.com/gilankpam/wfb-ng-openwrt/actions/workflows/build.yml)
+
+**[⬇ Download the latest firmware](https://github.com/gilankpam/wfb-ng-openwrt/releases/latest)** — built by CI from every push to `master` (rolling `latest` prerelease).
+
 Minimal OpenWrt firmware that turns a TP-Link CPE510 into a single-card
 wfb-ng **ground-station receiver** (with an optional uplink). It runs nothing
 at boot; you SSH in, configure, and start it on demand.
