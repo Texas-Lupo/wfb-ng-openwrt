@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Run the wfb-ng cluster host in Docker. --network host so the node (192.168.1.1)
+# can reach server_address (192.168.1.10) and the aggregator binds the host's IP.
+#
+#   cluster-test/wfb.sh --profiles gs --gen-init 192.168.1.1   # print node init script
+#   cluster-test/wfb.sh --profiles gs --cluster manual         # run the aggregator
+#   cluster-test/wfb.sh --profiles gs --cluster manual &       # ... in background
+#
+# wfb-cli (stats UI) is in the same image:
+#   docker run --rm -it --network host -v "$PWD/cluster-test/wifibroadcast.cfg:/etc/wifibroadcast.cfg:ro" \
+#       --entrypoint wfb-cli wfb-cluster-test gs
+set -euo pipefail
+cd "$(dirname "$0")/.."
+exec docker run --rm -i --network host \
+  --cap-add NET_ADMIN --device /dev/net/tun \
+  -v "$PWD/cluster-test/wifibroadcast.cfg:/etc/wifibroadcast.cfg:ro" \
+  -v "$PWD/keys/gs.key:/etc/gs.key:ro" \
+  wfb-cluster-test "$@"

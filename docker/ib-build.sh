@@ -11,10 +11,22 @@ cd /opt/ib
 
 mkdir -p packages
 cp /work/build/packages/wfb-ng-*.apk packages/
+# Our patched mac80211/ath9k kmods (PKG_RELEASE=3) override the stock -r1 ones.
+cp /work/build/packages/kmod-*.apk packages/
 
 for p in $PROFILES; do
   echo "=== building image for $p ==="
   make image PROFILE="$p" PACKAGES="$PACKAGES" FILES=/work/build/overlay ADD_LOCAL_KEY=1
+  # Assert the image installed OUR patched kmod-mac80211 (-r2), not the stock -r1.
+  man=$(find bin -name "*${p}*.manifest" | head -n1)
+  [ -n "$man" ] || { echo "ERROR: no manifest for $p - cannot verify kmod override"; exit 1; }
+  echo "--- $p wireless kmods ---"; grep -E '^kmod-(mac80211|ath9k|ath|cfg80211)' "$man" || true
+  # The struct-ABI change spans mac80211 + ath9k, so assert BOTH (plus ath9k-common) are our
+  # -r2 and that no stock -r1 of them slipped in (a mixed install would shift the noise offset).
+  for k in kmod-mac80211 kmod-ath9k kmod-ath9k-common; do
+    awk -v k="$k" '$1==k{if ($0 ~ /-r3$/) ok=1; else bad=1} END{exit !(ok && !bad)}' "$man" \
+      || { echo "ERROR: $p: $k is not our -r2 build"; exit 1; }
+  done
 done
 
 mkdir -p /work/output

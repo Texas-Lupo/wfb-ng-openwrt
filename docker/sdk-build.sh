@@ -22,6 +22,28 @@ PKG=$(find bin/packages -name 'wfb-ng-*.apk' | head -n1)
 [ -n "$PKG" ] || { echo "ERROR: no wfb-ng .apk produced"; find bin/packages -name 'wfb-ng*' -o -name '*.apk' | head; exit 1; }
 cp -v "$PKG" /work/build/packages/
 
+# --- Patched mac80211/ath9k bundle: radiotap DBM_ANTNOISE so wfb-ng reports SNR. ---
+# Source comes from the SDK's own base feed (exact 25.12.4 rev), copied into the package
+# tree so we can apply our patch and bump PKG_RELEASE. PATCH is applied only if present
+# (Task 1 builds stock; Task 2 adds the patch + the release bump).
+MAC_SRC=feeds/base/kernel/mac80211
+MAC_PKG=package/kernel/mac80211
+if [ ! -d "$MAC_PKG" ]; then cp -a "$MAC_SRC" "$MAC_PKG"; fi
+if [ -f /work/patches/mac80211/999-ath9k-radiotap-antnoise.patch ]; then
+  cp /work/patches/mac80211/999-ath9k-radiotap-antnoise.patch "$MAC_PKG/patches/subsys/"
+  sed -i 's/^PKG_RELEASE:=.*/PKG_RELEASE:=3/' "$MAC_PKG/Makefile"
+fi
+grep -q '^CONFIG_PACKAGE_kmod-ath9k=y' .config 2>/dev/null || echo 'CONFIG_PACKAGE_kmod-ath9k=y' >> .config
+make defconfig
+make package/kernel/mac80211/compile -j"$(nproc)"
+# apk filenames use dashes; the version begins with the kernel version digit, so
+# "${k}-[0-9]*" matches kmod-ath9k but NOT kmod-ath9k-common / kmod-ath9k-htc.
+for k in kmod-cfg80211 kmod-mac80211 kmod-ath kmod-ath9k kmod-ath9k-common; do
+  f=$(find bin -name "${k}-[0-9]*.apk" | head -n1)
+  [ -n "$f" ] || { echo "ERROR: $k apk not produced"; exit 1; }
+  cp -v "$f" /work/build/packages/
+done
+
 # Architecture sanity: the binaries must be big-endian (MSB) MIPS.
 BIN=$(find build_dir -type f -name wfb_rx | head -n1)
 echo "Checking arch of $BIN"

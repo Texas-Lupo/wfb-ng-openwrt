@@ -1,0 +1,8 @@
+v=0
+o=- 0 0 IN IP4 127.0.0.1
+s=FPV wfb-ng video
+c=IN IP4 127.0.0.1
+t=0 0
+a=tool:wfb-ng
+m=video 5600 RTP/AVP 97
+a=rtpmap:97 H265/90000
