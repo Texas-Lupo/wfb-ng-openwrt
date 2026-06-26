@@ -38,8 +38,9 @@ define Package/wfb-ng
 endef
 
 define Package/wfb-ng/description
-  Minimal wfb-ng build: wfb_rx and wfb_tx binaries plus an on-demand POSIX-sh
-  launcher (wfb-ng.sh) for a single-card OpenWrt ground-station node.
+  Minimal wfb-ng build: wfb_rx and wfb_tx binaries plus a POSIX-sh launcher
+  (wfb-ng.sh) and a procd init script (/etc/init.d/wfb-ng) that supervises the
+  per-stream forwarders/injectors for a single-card OpenWrt cluster node.
 endef
 
 define Package/wfb-ng/conffiles
@@ -52,6 +53,8 @@ define Package/wfb-ng/install
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/wfb_tx $(1)/usr/bin/wfb_tx
 	$(INSTALL_DIR) $(1)/usr/sbin
 	$(INSTALL_BIN) ./files/wfb-ng.sh $(1)/usr/sbin/wfb-ng.sh
+	$(INSTALL_DIR) $(1)/etc/init.d
+	$(INSTALL_BIN) ./files/wfb-ng.init $(1)/etc/init.d/wfb-ng
 	$(INSTALL_DIR) $(1)/etc
 	$(INSTALL_CONF) ./files/wfb-ng.conf $(1)/etc/wfb-ng.conf
 endef

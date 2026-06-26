@@ -5,12 +5,14 @@
 **[⬇ Download the latest firmware](https://github.com/gilankpam/wfb-ng-openwrt/releases/latest)** — built by CI from every push to `master` (rolling `latest` prerelease).
 
 Minimal OpenWrt firmware that turns a TP-Link CPE510 into a single-card
-wfb-ng **ground-station receiver** (with an optional uplink). It runs nothing
-at boot; you SSH in, configure, and start it on demand.
+wfb-ng **cluster node** (with an optional uplink). The node forwards raw 802.11
+to an aggregator host that holds the key and decrypts — **no key lives on the
+device**. It runs nothing at boot; you SSH in, configure, and start it on demand.
 
 - OpenWrt **25.12** (`ath79/generic`), CPE510 **v1/v2/v3**.
 - Ships `wfb_rx` + `wfb_tx` built from `gilankpam/wfb-ng@swfec`, an on-demand
-  launcher, a baked **test key** (insecure — see *Keys*), and SSH for config.
+  launcher (per-stream forwarders + injectors: video / mavlink / tunnel), and
+  SSH for config. No key is baked into the image.
 - Design + plan: `docs/superpowers/specs/` and `docs/superpowers/plans/`.
 
 ## Build
@@ -31,7 +33,6 @@ The first run builds two Docker images (OpenWrt SDK ~3.5 GB, ImageBuilder
 Outputs land in `output/`:
 - `*tplink_cpe510-v{1,2,3}-squashfs-sysupgrade.bin` — flash from OpenWrt.
 - `*tplink_cpe510-v{1,2,3}-squashfs-factory.bin` — flash from TP-Link firmware / TFTP.
-- `drone.key` — copy this to your **air unit** (it pairs with the baked `gs.key`).
 
 To build newer wfb-ng work: push to the fork, set `WFB_COMMIT` in `versions.env`, rerun.
 
@@ -60,29 +61,29 @@ Pick the file matching your hardware revision. From stock TP-Link: use the
 
 1. Set your computer's NIC to a static **192.168.1.10/24** and connect it to the
    CPE510 (PoE LAN port). The device is **192.168.1.1**, no DHCP.
-2. `ssh root@192.168.1.1`
-3. Edit `/etc/wfb-ng.conf` to match your air unit (`CHANNEL`, `LINK_ID`, and, if
-   you want the uplink, `TX_ENABLED=1`). `HOST_ADDR` defaults to `192.168.1.10`.
-4. Start it: `/usr/sbin/wfb-ng.sh start`  (also `stop`, `restart`, `status`).
-5. On your computer: decoded downlink arrives as UDP on **192.168.1.10:5600**
-   (point your video player / GCS there). For the uplink, send UDP to
-   **192.168.1.1:5601**.
+2. On that host, run the wfb-ng **aggregator** — it holds the key and does the
+   FEC-decode + decryption. See `cluster-test/` for a ready-made Docker host that
+   binds `192.168.1.10` and serves `wfb-cli` stats.
+3. `ssh root@192.168.1.1`
+4. Edit `/etc/wfb-ng.conf` to match your air unit / aggregator. `CHANNEL` and
+   `BW` are separate keys (`132` + `HT20`); set `LINK_ID` to match the link.
+   `HOST_ADDR` is the aggregator host (default `192.168.1.10`). The node mirrors
+   the standard multi-stream profile — `RX_STREAMS` forwards video/mavlink/tunnel
+   (radio ports `0`/`16`/`32` → host UDP `10000`/`10001`/`10002`) and `TX_PORTS`
+   are the uplink injector ports (`11001`/`11002`; clear it to disable the uplink).
+5. Start it. Two ways:
+   - **Supervised (recommended):** `/etc/init.d/wfb-ng start` runs each forwarder
+     and injector as a procd instance that auto-respawns on crash. Add
+     `/etc/init.d/wfb-ng enable` to also start on boot.
+   - **One-shot:** `/usr/sbin/wfb-ng.sh start` (also `stop`, `restart`, `status`)
+     for a quick, unsupervised run — don't use both at once.
 
-There is no autostart. To make it persist across reboots you must add your own
-init hook — by design it stays off until you start it.
+   The node forwards raw 802.11 to the aggregator on **192.168.1.10:10000-10002**;
+   the aggregator decodes and serves the decrypted streams. For the uplink, the
+   host injects raw frames to **192.168.1.1:11001-11002**.
 
-## Keys (important)
-
-The image bakes a **fixed, shared, non-unique test key** (`keys/gs.key`) — fine
-for bench/PoC, **not secure**. For a real link, regenerate a unique pair and
-rebuild:
-
-```sh
-cd keys && rm -f gs.key drone.key && ../../wfb-ng/wfb_keygen && cd ..
-./build.sh image
-```
-
-Install the new `output/drone.key` on the air unit.
+Autostart is **off** until you `/etc/init.d/wfb-ng enable` — by design it stays
+off otherwise.
 
 ## On-device smoke test
 
@@ -90,7 +91,8 @@ Install the new `output/drone.key` on the air unit.
 ssh root@192.168.1.1
 iw dev                      # radio present (phy0)
 /usr/sbin/wfb-ng.sh start
-/usr/sbin/wfb-ng.sh status  # wfb_rx running; mon0 present on the channel
+/usr/sbin/wfb-ng.sh status  # forwarders/injectors running; mon0 present on the channel
 ```
-With the air unit transmitting (matching key / `LINK_ID` / radio port / channel),
-on the host: `tcpdump -ni <nic> udp port 5600` should show decoded packets.
+With the air unit transmitting (matching `LINK_ID` / radio port / channel), the
+node forwards raw frames to the aggregator host: `tcpdump -ni <nic> udp port 10000`
+shows the forwarded video stream, and the aggregator there decrypts it.

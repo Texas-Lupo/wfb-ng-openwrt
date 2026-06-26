@@ -45,6 +45,8 @@ build_ib_image() {
 cmd_test() {
   echo "=== launcher tests ==="
   sh feed/net/wfb-ng/tests/test_launcher.sh
+  echo "=== init script tests ==="
+  sh feed/net/wfb-ng/tests/test_init.sh
 }
 
 cmd_package() {
@@ -61,7 +63,6 @@ cmd_image() {
   rm -rf build/overlay && mkdir -p build/overlay/etc
   if [ -d files ]; then cp -a files/. build/overlay/; fi
   rm -f build/overlay/.gitkeep
-  cp keys/gs.key build/overlay/etc/gs.key
   mkdir -p output
   "${DOCKER_RUN[@]}" \
     -e PROFILES="$CPE510_PROFILES" -e PACKAGES="$IMG_PACKAGES" \

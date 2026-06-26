@@ -1,5 +1,8 @@
 #!/bin/sh
-# Minimal on-demand wfb-ng launcher for a single-card OpenWrt ground station.
+# Minimal on-demand wfb-ng launcher for a single-card OpenWrt cluster NODE.
+# The node forwards raw 802.11 to the aggregator host (which holds the key and
+# decrypts) and injects raw frames the host sends back -- no key on the device.
+# Mirrors the multi-stream node profile: video + mavlink + tunnel.
 # POSIX sh / busybox ash only (no bash on the device).
 
 WFB_CONF="${WFB_CONF:-/etc/wfb-ng.conf}"
@@ -8,25 +11,25 @@ WFB_RUN_DIR="${WFB_RUN_DIR:-/var/run}"
 # Defaults (overridable via $WFB_CONF)
 PHY="phy0"
 MON="mon0"
-CHANNEL="149"
+CHANNEL="132"
 BW="HT20"
 REG="US"
 TXPOWER=""
-LINK_ID="0"
-KEY="/etc/gs.key"
-RX_RADIO_PORT="0"
+LINK_ID="7669206"
+RCV_BUF="2097152"
 HOST_ADDR="192.168.1.10"
-RX_UDP_PORT="5600"
+# Downlink forwarders -- one "radio_port:host_udp_port" per stream:
+#   0=video  16=mavlink  32=tunnel
+RX_STREAMS="0:10000 16:10001 32:10002"
 RX_EXTRA_ARGS=""
-TX_ENABLED="0"
-TX_RADIO_PORT="1"
-TX_UDP_PORT="5601"
+# Uplink injectors -- one local UDP port per stream (host injects raw frames):
+#   11001=mavlink  11002=tunnel  (empty disables the uplink)
+TX_PORTS="11001 11002"
 TX_EXTRA_ARGS=""
 
 [ -f "$WFB_CONF" ] && . "$WFB_CONF"
 
-RX_PID="$WFB_RUN_DIR/wfb_rx.pid"
-TX_PID="$WFB_RUN_DIR/wfb_tx.pid"
+PID_FILE="$WFB_RUN_DIR/wfb-ng.pids"
 
 setup_mon() {
     iw dev "$MON" del 2>/dev/null
@@ -41,57 +44,74 @@ setup_mon() {
     return 0
 }
 
+# True if any PID we recorded is still alive.
+running() {
+    [ -f "$PID_FILE" ] || return 1
+    while read -r pid; do
+        [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && return 0
+    done < "$PID_FILE"
+    return 1
+}
+
 start() {
-    if [ -f "$RX_PID" ] && kill -0 "$(cat "$RX_PID" 2>/dev/null)" 2>/dev/null; then
+    if running; then
         echo "wfb-ng: already running (use restart)" >&2
         exit 1
     fi
     mkdir -p "$WFB_RUN_DIR"
+    : > "$PID_FILE"
     setup_mon || { echo "wfb-ng: monitor setup failed" >&2; exit 1; }
-    wfb_rx -p "$RX_RADIO_PORT" -i "$LINK_ID" -c "$HOST_ADDR" -u "$RX_UDP_PORT" -K "$KEY" $RX_EXTRA_ARGS "$MON" &
-    echo $! > "$RX_PID"
-    if [ "$TX_ENABLED" = "1" ]; then
-        wfb_tx -p "$TX_RADIO_PORT" -i "$LINK_ID" -u "$TX_UDP_PORT" -K "$KEY" $TX_EXTRA_ARGS "$MON" &
-        echo $! > "$TX_PID"
-    fi
+
+    # Forwarders: relay raw 802.11 off the monitor vif to the aggregator host.
+    # Each forwarder carries one radio port (wfb-ng filters by link_id+radio_port).
+    for s in $RX_STREAMS; do
+        rp=${s%%:*}; up=${s#*:}
+        wfb_rx -f -c "$HOST_ADDR" -u "$up" -p "$rp" -i "$LINK_ID" -R "$RCV_BUF" $RX_EXTRA_ARGS "$MON" &
+        echo $! >> "$PID_FILE"
+    done
+
+    # Injectors: inject raw frames the host sends to each local UDP port.
+    for p in $TX_PORTS; do
+        wfb_tx -I "$p" -R "$RCV_BUF" $TX_EXTRA_ARGS "$MON" &
+        echo $! >> "$PID_FILE"
+    done
+
     echo "wfb-ng: started"
 }
 
-stop_one() {
-    [ -f "$1" ] || return 0
-    pid=$(cat "$1")
-    rm -f "$1"
-    [ -n "$pid" ] || return 0
-    kill "$pid" 2>/dev/null || return 0
-    # Wait briefly for graceful exit, then force-kill, so the monitor vif is
-    # released before the caller tears it down.
-    i=0
-    while kill -0 "$pid" 2>/dev/null; do
-        i=$((i + 1))
-        if [ "$i" -ge 3 ]; then
-            kill -9 "$pid" 2>/dev/null
-            break
-        fi
-        sleep 1
-    done
-}
-
 stop() {
-    stop_one "$RX_PID"
-    stop_one "$TX_PID"
+    if [ -f "$PID_FILE" ]; then
+        pids=$(cat "$PID_FILE")
+        # Signal all, wait briefly for graceful exit, then force-kill stragglers
+        # so the monitor vif is released before we tear it down.
+        for pid in $pids; do kill "$pid" 2>/dev/null; done
+        i=0
+        while [ "$i" -lt 3 ]; do
+            alive=0
+            for pid in $pids; do kill -0 "$pid" 2>/dev/null && alive=1; done
+            [ "$alive" -eq 0 ] && break
+            i=$((i + 1)); sleep 1
+        done
+        for pid in $pids; do kill -9 "$pid" 2>/dev/null; done
+        rm -f "$PID_FILE"
+    fi
     iw dev "$MON" del 2>/dev/null
     echo "wfb-ng: stopped"
 }
 
 status() {
-    for f in "$RX_PID" "$TX_PID"; do
-        name=$(basename "$f" .pid)
-        if [ -f "$f" ] && kill -0 "$(cat "$f")" 2>/dev/null; then
-            echo "$name: running (pid $(cat "$f"))"
-        else
-            echo "$name: stopped"
-        fi
-    done
+    if [ -f "$PID_FILE" ] && running; then
+        while read -r pid; do
+            [ -n "$pid" ] || continue
+            if kill -0 "$pid" 2>/dev/null; then
+                echo "pid $pid: running"
+            else
+                echo "pid $pid: dead"
+            fi
+        done < "$PID_FILE"
+    else
+        echo "wfb-ng: stopped"
+    fi
     iw dev "$MON" info 2>/dev/null || echo "$MON: absent"
 }
 
@@ -100,5 +120,20 @@ case "${1:-}" in
     stop) stop ;;
     restart) stop; start ;;
     status) status ;;
-    *) echo "usage: $0 {start|stop|restart|status}" >&2; exit 1 ;;
+    # mon-up/mon-down let the procd init script reuse the monitor-vif setup
+    # (channel/reg/txpower) without duplicating it; procd supervises the
+    # wfb_rx/wfb_tx instances itself.
+    mon-up)
+        # Idempotent: if the vif already exists, leave it alone. A redundant
+        # init-script `start` would otherwise del+recreate mon0 underneath the
+        # running wfb_rx/wfb_tx instances (brief vif churn).
+        if iw dev "$MON" info >/dev/null 2>&1; then
+            echo "wfb-ng: $MON already up"
+        else
+            setup_mon || { echo "wfb-ng: monitor setup failed" >&2; exit 1; }
+            echo "wfb-ng: $MON up"
+        fi
+        ;;
+    mon-down) iw dev "$MON" del 2>/dev/null; echo "wfb-ng: $MON down" ;;
+    *) echo "usage: $0 {start|stop|restart|status|mon-up|mon-down}" >&2; exit 1 ;;
 esac

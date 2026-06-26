@@ -74,7 +74,7 @@ jobs:
             echo "### Images"
             ( cd output && for f in *.bin; do printf -- '- `%s` (%s)\n' "$f" "$(du -h "$f" | cut -f1)"; done )
             echo
-            echo "> The baked \`gs.key\`/\`drone.key\` are a shared **test** key — regenerate and reflash for a real link."
+            echo "> This image is a wfb-ng **cluster node**: it forwards raw 802.11 to an aggregator host that holds the key. No key ships in the image."
           } > release-notes.md
           cat release-notes.md
 
@@ -87,4 +87,3 @@ jobs:
           body_path: release-notes.md
           files: |
             output/*.bin
-            output/drone.key

@@ -1,0 +1,65 @@
+#!/bin/sh /etc/rc.common
+# procd init script for the wfb-ng cluster node. Each downlink forwarder and
+# uplink injector runs as a supervised procd instance (auto-respawn on crash).
+# The monitor vif (channel/reg/txpower) is created once via the launcher's
+# mon-up/mon-down helpers, so all radio/stream config stays in /etc/wfb-ng.conf.
+#
+# Enable autostart on boot:  /etc/init.d/wfb-ng enable
+# Start now:                 /etc/init.d/wfb-ng start
+
+USE_PROCD=1
+# Start late (radio + network up); stop early.
+START=99
+STOP=10
+
+WFB_CONF="${WFB_CONF:-/etc/wfb-ng.conf}"
+LAUNCHER="${WFB_LAUNCHER:-/usr/sbin/wfb-ng.sh}"
+
+# Defaults mirror wfb-ng.sh; /etc/wfb-ng.conf overrides them.
+MON="mon0"
+LINK_ID="7669206"
+RCV_BUF="2097152"
+HOST_ADDR="192.168.1.10"
+RX_STREAMS="0:10000 16:10001 32:10002"
+RX_EXTRA_ARGS=""
+TX_PORTS="11001 11002"
+TX_EXTRA_ARGS=""
+
+start_service() {
+    [ -f "$WFB_CONF" ] && . "$WFB_CONF"
+
+    # Create the monitor vif once before the supervised instances start.
+    "$LAUNCHER" mon-up || return 1
+
+    # One supervised instance per downlink forwarder ("radio_port:host_udp_port").
+    for s in $RX_STREAMS; do
+        rp=${s%%:*}; up=${s#*:}
+        procd_open_instance "rx-$rp"
+        # shellcheck disable=SC2086  # $RX_EXTRA_ARGS is intentionally word-split
+        procd_set_param command wfb_rx -f -c "$HOST_ADDR" -u "$up" -p "$rp" -i "$LINK_ID" -R "$RCV_BUF" $RX_EXTRA_ARGS "$MON"
+        procd_set_param respawn
+        procd_set_param stdout 1
+        procd_set_param stderr 1
+        procd_close_instance
+    done
+
+    # One supervised instance per uplink injector (local UDP port).
+    for p in $TX_PORTS; do
+        procd_open_instance "tx-$p"
+        # shellcheck disable=SC2086  # $TX_EXTRA_ARGS is intentionally word-split
+        procd_set_param command wfb_tx -I "$p" -R "$RCV_BUF" $TX_EXTRA_ARGS "$MON"
+        procd_set_param respawn
+        procd_set_param stdout 1
+        procd_set_param stderr 1
+        procd_close_instance
+    done
+}
+
+stop_service() {
+    # procd stops the instances; tear down the monitor vif afterwards.
+    "$LAUNCHER" mon-down
+}
+
+service_triggers() {
+    procd_add_reload_trigger "wfb-ng"
+}
