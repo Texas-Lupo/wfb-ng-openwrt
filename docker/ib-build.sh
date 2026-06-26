@@ -30,7 +30,7 @@ for p in $PROFILES; do
 done
 
 mkdir -p /work/output
-find bin -type f \( -name '*cpe510*sysupgrade.bin' -o -name '*cpe510*factory.bin' \) -exec cp -v {} /work/output/ \;
+find bin -type f \( -name '*cpe510*sysupgrade.bin' -o -name '*cpe510*factory.bin' -o -name '*rocket*sysupgrade.bin' -o -name '*rocket*factory.bin' \) -exec cp -v {} /work/output/ \;
 
 # Image budget: every sysupgrade image must fit the 7680k partition.
 max=$((7680 * 1024))
