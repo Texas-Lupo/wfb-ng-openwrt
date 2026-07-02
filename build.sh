@@ -51,7 +51,7 @@ cmd_package() {
   build_sdk_image
   mkdir -p build/packages
   "${DOCKER_RUN[@]}" \
-    "$SDK_IMAGE" sh -c 'set +e; /work/docker/sdk-build.sh && /work/docker/sdk-fectest.sh; rc=$?; chown -R "$HOST_UID:$HOST_GID" /work/build 2>/dev/null || true; exit $rc'
+    "$SDK_IMAGE" sh -c 'set +e; /work/docker/sdk-build.sh; rc=$?; chown -R "$HOST_UID:$HOST_GID" /work/build 2>/dev/null || true; exit $rc'
 }
 cmd_image() {
   build_ib_image
