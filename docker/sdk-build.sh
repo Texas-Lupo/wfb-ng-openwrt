@@ -5,17 +5,15 @@
 set -eu
 cd /opt/sdk
 
-grep -q '^src-link wfbng ' feeds.conf 2>/dev/null || echo 'src-link wfbng /work/feed' >> feeds.conf
-./scripts/feeds update wfbng
-# wfb-ng also exists in the official 'packages' feed (the full upstream version);
-# -p wfbng forces OUR fork's package to win the name collision.
-./scripts/feeds install -p wfbng -f wfb-ng
+# Update standard OpenWrt feeds
+./scripts/feeds update packages routing
+# Install official upstream wfb-ng (resolves from the standard 'packages' feed)
+./scripts/feeds install wfb-ng
 ./scripts/feeds install libpcap libsodium
 
 grep -q '^CONFIG_PACKAGE_wfb-ng=y' .config 2>/dev/null || echo 'CONFIG_PACKAGE_wfb-ng=y' >> .config
 make defconfig
-make package/wfb-ng/compile -j"$(nproc)" \
-  WFB_REPO="${WFB_REPO}" WFB_COMMIT="${WFB_COMMIT}" WFB_VERSION="${WFB_VERSION}"
+make package/wfb-ng/compile -j"$(nproc)"
 
 mkdir -p /work/build/packages
 PKG=$(find bin/packages -name 'wfb-ng-*.apk' | head -n1)
