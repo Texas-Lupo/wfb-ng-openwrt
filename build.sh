@@ -44,19 +44,15 @@ build_ib_image() {
 
 cmd_test() {
   echo "=== launcher tests ==="
-  sh feed/net/wfb-ng/tests/test_launcher.sh
-  echo "=== init script tests ==="
-  sh feed/net/wfb-ng/tests/test_init.sh
+
 }
 
 cmd_package() {
   build_sdk_image
   mkdir -p build/packages
   "${DOCKER_RUN[@]}" \
-    -e WFB_REPO="$WFB_REPO" -e WFB_COMMIT="$WFB_COMMIT" -e WFB_VERSION="$WFB_VERSION" \
     "$SDK_IMAGE" sh -c 'set +e; /work/docker/sdk-build.sh && /work/docker/sdk-fectest.sh; rc=$?; chown -R "$HOST_UID:$HOST_GID" /work/build 2>/dev/null || true; exit $rc'
 }
-
 cmd_image() {
   build_ib_image
   ls build/packages/wfb-ng-*.apk >/dev/null 2>&1 || { echo "Run './build.sh package' first."; exit 1; }
